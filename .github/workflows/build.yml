@@ -27,17 +27,18 @@ jobs:
         echo "CONFIG_KPROBES=y" >> .config
         echo "CONFIG_KPROBE_EVENTS=y" >> .config
         
-        # Build directly - no config update step
-        make ARCH=arm -j4 LOCALVERSION="-KernelSU" || {
-          echo "First build attempt failed, trying with prepare step..."
-          make ARCH=arm prepare
-          make ARCH=arm -j4 LOCALVERSION="-KernelSU"
-        }
+        # Build the actual kernel image (zImage is the default target for ARM)
+        make ARCH=arm -j4 zImage LOCALVERSION="-KernelSU"
+        
+        # Also build device tree if needed
+        make ARCH=arm dtbs 2>/dev/null || true
     
     - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
         name: kernel
         path: |
+          arch/arm/boot/zImage
           arch/arm/boot/zImage*
           arch/arm/boot/Image
+          arch/arm/boot/*.dtb
