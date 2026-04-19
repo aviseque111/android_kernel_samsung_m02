@@ -5,7 +5,7 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v4
     
@@ -19,7 +19,7 @@ jobs:
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
         
-        # Copy defconfig directly
+        # Copy defconfig
         cp arch/arm/configs/a02_defconfig .config
         
         # Add KernelSU and Kprobes
@@ -27,18 +27,21 @@ jobs:
         echo "CONFIG_KPROBES=y" >> .config
         echo "CONFIG_KPROBE_EVENTS=y" >> .config
         
-        # Build the actual kernel image (zImage is the default target for ARM)
-        make ARCH=arm -j4 zImage LOCALVERSION="-KernelSU"
-        
-        # Also build device tree if needed
-        make ARCH=arm dtbs 2>/dev/null || true
+        # Try different build targets (MediaTek uses Image)
+        make ARCH=arm Image LOCALVERSION="-KernelSU" || \
+        make ARCH=arm all LOCALVERSION="-KernelSU" || \
+        make ARCH=arm
     
-    - name: Upload kernel
+    - name: Find and upload kernel
+      run: |
+        mkdir -p release
+        find . -name "Image" -o -name "zImage" -o -name "*.img" 2>/dev/null | head -10
+        cp arch/arm/boot/Image release/ 2>/dev/null || true
+        cp arch/arm/boot/zImage release/ 2>/dev/null || true
+        cp out/arch/arm/boot/Image release/ 2>/dev/null || true
+        
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: kernel
-        path: |
-          arch/arm/boot/zImage
-          arch/arm/boot/zImage*
-          arch/arm/boot/Image
-          arch/arm/boot/*.dtb
+        path: release/
