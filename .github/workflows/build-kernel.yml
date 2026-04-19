@@ -9,8 +9,30 @@ jobs:
     timeout-minutes: 30
     
     steps:
-    - name: Checkout kernel source
+    - name: Checkout kernel source (full depth)
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Debug - List all defconfig locations
+      run: |
+        cd $GITHUB_WORKSPACE
+        
+        echo "=== Current Architecture: arm ==="
+        echo "=== Searching all defconfig files ==="
+        find . -name "*defconfig*" -type f 2>/dev/null | head -30
+        
+        echo ""
+        echo "=== arch/arm/configs contents ==="
+        ls -la arch/arm/configs/ 2>/dev/null | head -20
+        
+        echo ""
+        echo "=== arch/arm/configs/vendor (if exists) ==="
+        ls -la arch/arm/configs/vendor/ 2>/dev/null || echo "No vendor subdirectory"
+        
+        echo ""
+        echo "=== Searching for a02 or k39 defconfigs ==="
+        find . -name "*a02*defconfig" -o -name "*k39*defconfig" 2>/dev/null
     
     - name: Install dependencies
       run: |
@@ -21,21 +43,39 @@ jobs:
           cpio kmod lzop xz-utils curl \
           libncurses-dev gcc-arm-linux-gnueabihf
     
-    - name: Build kernel
+    - name: Prepare defconfig with KernelSU requirements
       run: |
         cd $GITHUB_WORKSPACE
         
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
         
-        echo "=== Copying defconfig to .config ==="
-        cp arch/arm/configs/a02_defconfig .config
+        echo "=== Copying a02_defconfig to .config ==="
+        cp arch/arm/configs/a02_defconfig .config 2>/dev/null || cp arch/arm/configs/k39tv1_bsp_titan_hamster_defconfig .config 2>/dev/null
         
-        echo "=== Adding KernelSU ==="
+        if [ ! -f .config ]; then
+          echo "❌ No defconfig found!"
+          exit 1
+        fi
+        
+        echo "=== Adding KernelSU requirements ==="
+        # Add KernelSU
         echo "CONFIG_KSU=y" >> .config
         
-        echo "=== Running oldconfig (auto-answer yes) ==="
+        # Add required Kprobes (critical for 32-bit KernelSU!)
+        echo "CONFIG_KPROBES=y" >> .config
+        echo "CONFIG_HAVE_KPROBES=y" >> .config
+        echo "CONFIG_KPROBE_EVENTS=y" >> .config
+        
+        echo "=== Running oldconfig (auto-answer) ==="
         yes "" | make ARCH=arm oldconfig
+    
+    - name: Build kernel
+      run: |
+        cd $GITHUB_WORKSPACE
+        
+        export ARCH=arm
+        export CROSS_COMPILE=arm-linux-gnueabihf-
         
         echo "=== Starting compilation ==="
         make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- -j4 LOCALVERSION="-KernelSU"
