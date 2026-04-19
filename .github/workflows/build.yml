@@ -1,0 +1,38 @@
+name: Build Kernel with KernelSU Next
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout kernel source
+      uses: actions/checkout@v4
+      with:
+        ref: master
+        
+    - name: Install build dependencies
+      run: |
+        sudo apt update
+        sudo apt install -y git make bc bison flex libssl-dev libelf-dev \
+          gcc-arm-linux-gnueabihf crossbuild-essential-armhf
+        
+    - name: Configure kernel
+      run: |
+        export ARCH=arm
+        export CROSS_COMPILE=arm-linux-gnueabihf-
+        make CC=arm-linux-gnueabihf-gcc k39tv1_bsp_titan_hamster_defconfig
+        
+    - name: Build kernel
+      run: |
+        export ARCH=arm
+        export CROSS_COMPILE=arm-linux-gnueabihf-
+        make -j$(nproc) CC=arm-linux-gnueabihf-gcc \
+          KBUILD_CFLAGS="-fno-stack-protector"
+        
+    - name: Upload kernel image
+      uses: actions/upload-artifact@v4
+      with:
+        name: KernelSU-Next-boot-image
+        path: arch/arm/boot/zImage-dtb
