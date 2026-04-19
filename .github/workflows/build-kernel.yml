@@ -1,4 +1,4 @@
-name: Build KernelSU-Next Kernel for SM-M022G
+name: Build KernelSU Kernel for SM-M022G
 
 on:
   workflow_dispatch:
@@ -27,11 +27,6 @@ jobs:
         curl -L https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9/archive/refs/heads/lineage-18.1.tar.gz | tar xz
         mv android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9-lineage-18.1 arm-linux-androideabi-4.9
     
-    - name: Download KernelSU-Next
-      run: |
-        cd $GITHUB_WORKSPACE
-        curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next --no-prompt
-    
     - name: Setup environment
       run: |
         echo "ARCH=arm" >> $GITHUB_ENV
@@ -44,20 +39,16 @@ jobs:
         
         export PATH=$HOME/toolchains/arm-linux-androideabi-4.9/bin:$PATH
         
-        echo "Using defconfig: k39tv1_bsp_titan_hamster_defconfig"
+        echo "Building with defconfig: k39tv1_bsp_titan_hamster_defconfig"
         
         make O=out ARCH=arm \
           CROSS_COMPILE=$HOME/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- \
           k39tv1_bsp_titan_hamster_defconfig
         
-        # Apply KernelSU config
-        echo "CONFIG_KSU=y" >> out/.config
-        
-        # Build
         make O=out ARCH=arm \
           CROSS_COMPILE=$HOME/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- \
           -j$(nproc) \
-          LOCALVERSION="-KernelSU-Next"
+          LOCALVERSION="-KernelSU"
     
     - name: Package kernel
       run: |
@@ -65,20 +56,16 @@ jobs:
         
         if [ -f out/arch/arm/boot/zImage-dtb ]; then
           cp out/arch/arm/boot/zImage-dtb release/
-          echo "Kernel: zImage-dtb" > release/INFO.txt
         elif [ -f out/arch/arm/boot/zImage ]; then
           cp out/arch/arm/boot/zImage release/
-          echo "Kernel: zImage" > release/INFO.txt
         fi
         
-        echo "Device: SM-M022G (MT6739)" >> release/INFO.txt
-        echo "Flash with: dd if=zImage* of=/dev/block/platform/bootdevice/by-name/boot" >> release/INFO.txt
-        
+        echo "SM-M022G KernelSU Kernel" > release/README.txt
         ls -la release/
     
     - name: Upload kernel artifact
       uses: actions/upload-artifact@v4
       with:
-        name: KernelSU-Next-SM-M022G
+        name: KernelSU-SM-M022G
         path: release/
         retention-days: 7
