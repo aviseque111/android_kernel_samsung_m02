@@ -10,6 +10,11 @@ jobs:
     - name: Checkout kernel source
       uses: actions/checkout@v4
       
+    - name: Debug - List configs directory
+      run: |
+        ls -la arch/arm/configs/ | head -20
+        ls -la arch/arm/configs/ | grep -i k39 || echo "Defconfig NOT FOUND!"
+        
     - name: Install build dependencies
       run: |
         sudo apt update
@@ -20,21 +25,14 @@ jobs:
       run: |
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
-        # Override compiler settings to use GCC instead of hardcoded Clang
         make CC=arm-linux-gnueabihf-gcc k39tv1_bsp_titan_hamster_defconfig
         
     - name: Build kernel
       run: |
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
-        # Use GCC and disable stack protector to avoid errors
-        make -j$(nproc) \
-          CC=arm-linux-gnueabihf-gcc \
-          LD=arm-linux-gnueabihf-ld \
-          AR=arm-linux-gnueabihf-ar \
-          STRIP=arm-linux-gnueabihf-strip \
-          KBUILD_CFLAGS="-fno-stack-protector" \
-          KBUILD_CPPFLAGS="-fno-stack-protector"
+        make -j$(nproc) CC=arm-linux-gnueabihf-gcc \
+          KBUILD_CFLAGS="-fno-stack-protector"
         
     - name: Upload kernel image
       uses: actions/upload-artifact@v4
