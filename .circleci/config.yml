@@ -1,0 +1,45 @@
+version: 2.1
+
+jobs:
+  build-kernel:
+    machine:
+      image: ubuntu-2004:2024.01.1
+    resource_class: arm.medium
+    steps:
+      - checkout
+      - run:
+          name: Install Dependencies
+          command: |
+            sudo apt-get update -qq
+            sudo apt-get install -y \
+              git make gcc g++ flex bison bc \
+              libssl-dev libelf-dev device-tree-compiler \
+              cpio kmod lzop xz-utils curl \
+              libncurses-dev gcc-arm-linux-gnueabihf
+      - run:
+          name: Build KernelSU Kernel
+          command: |
+            export ARCH=arm
+            export CROSS_COMPILE=arm-linux-gnueabihf-
+            cp arch/arm/configs/a02_defconfig .config
+            echo "CONFIG_KSU=y" >> .config
+            echo "CONFIG_KPROBES=y" >> .config
+            echo "CONFIG_HAVE_KPROBES=y" >> .config
+            echo "CONFIG_KPROBE_EVENTS=y" >> .config
+            make ARCH=arm silentoldconfig < /dev/null || true
+            make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- -j4 LOCALVERSION="-KernelSU"
+      - run:
+          name: Package Kernel
+          command: |
+            mkdir -p release
+            cp arch/arm/boot/zImage* release/ 2>/dev/null || cp arch/arm/boot/Image release/ 2>/dev/null
+            ls -la release/
+      - store_artifacts:
+          path: release/
+          destination: kernel
+
+workflows:
+  version: 2
+  build:
+    jobs:
+      - build-kernel
