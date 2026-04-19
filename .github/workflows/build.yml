@@ -1,41 +1,34 @@
-name: Build Kernel with KernelSU Next
+name: Build KernelSU
 
 on:
   workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
-    - name: Checkout kernel source
-      uses: actions/checkout@v4
-      
-    - name: Debug - List configs directory
-      run: |
-        ls -la arch/arm/configs/ | head -20
-        ls -la arch/arm/configs/ | grep -i k39 || echo "Defconfig NOT FOUND!"
-        
-    - name: Install build dependencies
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
       run: |
         sudo apt update
-        sudo apt install -y git make bc bison flex libssl-dev libelf-dev \
-          gcc-arm-linux-gnueabihf crossbuild-essential-armhf
-        
-    - name: Configure kernel
-      run: |
-        export ARCH=arm
-        export CROSS_COMPILE=arm-linux-gnueabihf-
-        make CC=arm-linux-gnueabihf-gcc k39tv1_bsp_titan_hamster_defconfig
-        
+        sudo apt install -y gcc-arm-linux-gnueabihf flex bison bc libssl-dev libelf-dev
+    
     - name: Build kernel
       run: |
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
-        make -j$(nproc) CC=arm-linux-gnueabihf-gcc \
-          KBUILD_CFLAGS="-fno-stack-protector"
-        
-    - name: Upload kernel image
+        cp arch/arm/configs/a02_defconfig .config
+        echo "CONFIG_KSU=y" >> .config
+        echo "CONFIG_KPROBES=y" >> .config
+        echo "CONFIG_KPROBE_EVENTS=y" >> .config
+        make ARCH=arm oldconfig
+        make ARCH=arm -j4 LOCALVERSION="-KernelSU"
+    
+    - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
-        name: KernelSU-Next-boot-image
-        path: arch/arm/boot/zImage-dtb
+        name: kernel
+        path: |
+          arch/arm/boot/zImage*
+          arch/arm/boot/Image
