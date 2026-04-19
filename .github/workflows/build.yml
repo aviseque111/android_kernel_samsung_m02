@@ -19,7 +19,7 @@ jobs:
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
         
-        # Copy defconfig
+        # Copy defconfig directly
         cp arch/arm/configs/a02_defconfig .config
         
         # Add KernelSU and Kprobes
@@ -27,11 +27,12 @@ jobs:
         echo "CONFIG_KPROBES=y" >> .config
         echo "CONFIG_KPROBE_EVENTS=y" >> .config
         
-        # Use silentoldconfig (works with 4.14)
-        make ARCH=arm silentoldconfig < /dev/null || true
-        
-        # Build
-        make ARCH=arm -j4 LOCALVERSION="-KernelSU"
+        # Build directly - no config update step
+        make ARCH=arm -j4 LOCALVERSION="-KernelSU" || {
+          echo "First build attempt failed, trying with prepare step..."
+          make ARCH=arm prepare
+          make ARCH=arm -j4 LOCALVERSION="-KernelSU"
+        }
     
     - name: Upload kernel
       uses: actions/upload-artifact@v4
