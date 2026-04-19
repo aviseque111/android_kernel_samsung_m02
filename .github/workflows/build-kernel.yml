@@ -5,35 +5,12 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-20.04
     timeout-minutes: 30
     
     steps:
     - name: Checkout kernel source
       uses: actions/checkout@v4
-    
-    - name: Debug - Check actual files
-      run: |
-        echo "=== Current directory ==="
-        pwd
-        ls -la
-        
-        echo "=== arch/arm/configs contents ==="
-        ls -la arch/arm/configs/ | grep -E "k39|a02|titan"
-        
-        echo "=== Does defconfig exist? ==="
-        if [ -f arch/arm/configs/a02_defconfig ]; then
-          echo "✅ a02_defconfig exists"
-          ls -la arch/arm/configs/a02_defconfig
-        else
-          echo "❌ a02_defconfig NOT found"
-        fi
-        
-        if [ -f arch/arm/configs/k39tv1_bsp_titan_hamster_defconfig ]; then
-          echo "✅ k39tv1_bsp_titan_hamster_defconfig exists"
-        else
-          echo "❌ k39tv1_bsp_titan_hamster_defconfig NOT found"
-        fi
     
     - name: Install dependencies
       run: |
@@ -44,23 +21,21 @@ jobs:
           cpio kmod lzop xz-utils curl \
           libncurses-dev gcc-arm-linux-gnueabihf
     
-    - name: Try build with absolute path
+    - name: Build kernel
       run: |
         cd $GITHUB_WORKSPACE
         
         export ARCH=arm
         export CROSS_COMPILE=arm-linux-gnueabihf-
         
-        # Copy defconfig directly to .config
         echo "=== Copying defconfig to .config ==="
         cp arch/arm/configs/a02_defconfig .config
         
-        echo "=== Running olddefconfig ==="
-        make ARCH=arm olddefconfig
-        
         echo "=== Adding KernelSU ==="
         echo "CONFIG_KSU=y" >> .config
-        make ARCH=arm olddefconfig
+        
+        echo "=== Running oldconfig (auto-answer yes) ==="
+        yes "" | make ARCH=arm oldconfig
         
         echo "=== Starting compilation ==="
         make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- -j4 LOCALVERSION="-KernelSU"
