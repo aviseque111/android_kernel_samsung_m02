@@ -2,38 +2,30 @@ name: Build KernelSU-Next Kernel for SM-M022G
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ master ]
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     
     steps:
     - name: Checkout kernel source
       uses: actions/checkout@v4
     
-    - name: Install build dependencies
+    - name: Install essential build dependencies
       run: |
-        sudo apt-get update
+        sudo apt-get update -qq
         sudo apt-get install -y \
-          git ccache automake flex lzop bison \
-          gperf build-essential zip curl zlib1g-dev \
-          g++-multilib libxml2-utils bzip2 libbz2-dev \
-          libbz2-1.0 libghc-bzlib-dev squashfs-tools \
-          pngcrush schedtool dpkg-dev liblz4-tool \
-          make optipng libssl-dev libswitch-perl \
-          libc6-dev-i386 lib32ncurses5-dev x11proto-core-dev \
-          libx11-dev lib32z-dev libgl1-mesa-dev xsltproc unzip \
-          device-tree-compiler bc kmod cpio libelf-dev \
-          python3
+          git make gcc g++ flex bison bc \
+          libssl-dev libelf-dev device-tree-compiler \
+          cpio kmod lzop xz-utils curl \
+          libncurses-dev lib32ncurses-dev libc6-dev-i386
     
     - name: Download ARM32 cross-compiler
       run: |
         mkdir -p ~/toolchains
         cd ~/toolchains
-        git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 \
-          arm-linux-androideabi-4.9
+        curl -L https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9/archive/refs/heads/lineage-18.1.tar.gz | tar xz
+        mv android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9-lineage-18.1 arm-linux-androideabi-4.9
     
     - name: Download KernelSU-Next
       run: |
@@ -45,56 +37,6 @@ jobs:
         echo "ARCH=arm" >> $GITHUB_ENV
         echo "SUBARCH=arm" >> $GITHUB_ENV
         echo "CROSS_COMPILE=$HOME/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-" >> $GITHUB_ENV
-        echo "CROSS_COMPILE_ARM32=$HOME/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi-" >> $GITHUB_ENV
-    
-    - name: Find and verify defconfig
-      run: |
-        cd $GITHUB_WORKSPACE
-        
-        echo "=== Looking for defconfig ==="
-        echo "Searching for k39tv1_bsp_titan_hamster_defconfig..."
-        
-        if [ -f "arch/arm/configs/k39tv1_bsp_titan_hamster_defconfig" ]; then
-          echo "✅ Found: k39tv1_bsp_titan_hamster_defconfig"
-          echo "DEFCONFIG=k39tv1_bsp_titan_hamster_defconfig" >> $GITHUB_ENV
-        else
-          echo "⚠️ Not found. Available configs:"
-          ls arch/arm/configs/ | grep -E "(k39|titan|hamster|a02|M022G)" || ls arch/arm/configs/
-          echo ""
-          echo "Using fallback search..."
-          DEFCONFIG=$(ls arch/arm/configs/ | grep -i "k39" | head -1)
-          if [ -z "$DEFCONFIG" ]; then
-            DEFCONFIG=$(ls arch/arm/configs/ | grep -i "titan" | head -1)
-          fi
-          if [ -z "$DEFCONFIG" ]; then
-            DEFCONFIG=$(ls arch/arm/configs/ | grep -i "a02" | head -1)
-          fi
-          echo "Using defconfig: $DEFCONFIG"
-          echo "DEFCONFIG=$DEFCONFIG" >> $GITHUB_ENV
-        fi
-    
-    - name: Apply kernel fixes
-      run: |
-        cd $GITHUB_WORKSPACE
-        
-        echo "Applying fixes to ${DEFCONFIG}..."
-        
-        # Fix stack protector
-        sed -i 's/CONFIG_STACKPROTECTOR_STRONG=y/# CONFIG_STACKPROTECTOR_STRONG is not set/' arch/arm/configs/${DEFCONFIG} 2>/dev/null || true
-        echo "CONFIG_CC_STACKPROTECTOR_NONE=y" >> arch/arm/configs/${DEFCONFIG}
-        
-        # Fix CC version check
-        sed -i 's/CONFIG_CC_VERSION=.*/CONFIG_CC_VERSION="gcc"/g' arch/arm/configs/${DEFCONFIG} 2>/dev/null || true
-        
-        # Remove Clang-specific flags from Makefile
-        sed -i '/CLANG_TRIPLE/d' Makefile 2>/dev/null || true
-        sed -i 's/-mno-global-merge//g' Makefile 2>/dev/null || true
-        sed -i 's/-Qunused-arguments//g' Makefile 2>/dev/null || true
-        
-        # Enable KernelSU
-        echo "CONFIG_KSU=y" >> arch/arm/configs/${DEFCONFIG}
-        
-        echo "✅ Fixes applied to ${DEFCONFIG}"
     
     - name: Build kernel
       run: |
@@ -102,83 +44,37 @@ jobs:
         
         export PATH=$HOME/toolchains/arm-linux-androideabi-4.9/bin:$PATH
         
-        echo "=== Building with defconfig: ${DEFCONFIG} ==="
+        echo "Using defconfig: k39tv1_bsp_titan_hamster_defconfig"
         
         make O=out ARCH=arm \
           CROSS_COMPILE=$HOME/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- \
-          ${DEFCONFIG}
+          k39tv1_bsp_titan_hamster_defconfig
         
-        echo "=== Starting compilation ==="
+        # Apply KernelSU config
+        echo "CONFIG_KSU=y" >> out/.config
+        
+        # Build
         make O=out ARCH=arm \
           CROSS_COMPILE=$HOME/toolchains/arm-linux-androideabi-4.9/bin/arm-linux-androideabi- \
           -j$(nproc) \
           LOCALVERSION="-KernelSU-Next"
     
-    - name: Verify and package
+    - name: Package kernel
       run: |
-        cd $GITHUB_WORKSPACE
-        
-        echo "=== Build output ==="
-        ls -la out/arch/arm/boot/
-        
         mkdir -p release
         
         if [ -f out/arch/arm/boot/zImage-dtb ]; then
           cp out/arch/arm/boot/zImage-dtb release/
-          echo "✅ Packaged: zImage-dtb"
-          echo "KERNEL_IMAGE=zImage-dtb" >> release/info.txt
+          echo "Kernel: zImage-dtb" > release/INFO.txt
         elif [ -f out/arch/arm/boot/zImage ]; then
           cp out/arch/arm/boot/zImage release/
-          echo "✅ Packaged: zImage"
-          echo "KERNEL_IMAGE=zImage" >> release/info.txt
-        elif [ -f out/arch/arm/boot/Image ]; then
-          cp out/arch/arm/boot/Image release/
-          echo "✅ Packaged: Image"
-          echo "KERNEL_IMAGE=Image" >> release/info.txt
-        else
-          echo "❌ No kernel image found!"
-          find out -name "*.img" -o -name "zImage*" -o -name "Image*" 2>/dev/null
-          exit 1
+          echo "Kernel: zImage" > release/INFO.txt
         fi
         
-        # Create instructions
-        cat > release/FLASH_README.txt << 'INFO'
-        ================================================
-        Samsung Galaxy M02 (SM-M022G)
-        KernelSU-Next Kernel for MT6739
-        ================================================
+        echo "Device: SM-M022G (MT6739)" >> release/INFO.txt
+        echo "Flash with: dd if=zImage* of=/dev/block/platform/bootdevice/by-name/boot" >> release/INFO.txt
         
-        BUILD DATE: $(date)
-        DEFCONFIG: ${DEFCONFIG}
-        
-        FLASH OPTIONS:
-        
-        1. ErosFlashTool (PC):
-           - Open ErosFlashTool
-           - Load scatter file from stock firmware
-           - Replace boot partition with this kernel image
-           - Click Download
-        
-        2. dd command (Root required):
-           su -c "dd if=KERNEL_IMAGE of=/dev/block/platform/bootdevice/by-name/boot"
-        
-        3. TWRP (if installed):
-           - Boot to recovery
-           - Install → Install Image → Select kernel → Boot partition
-        
-        VERIFICATION:
-        - Install KernelSU Manager APK
-        - Open app and check status
-        
-        RECOVERY:
-        - Keep stock boot.img ready for recovery
-        - Flash back if bootloop occurs
-        
-        ================================================
-        INFO
-        
-        echo "✅ Build successful!"
-        ls -lh release/
+        ls -la release/
     
     - name: Upload kernel artifact
       uses: actions/upload-artifact@v4
